@@ -232,173 +232,56 @@ export function generateRandomColor(): string {
 }
 
 /**
- * Storage utilities (using localStorage for now)
+ * Storage utilities (now using API calls to persist to Neon DB)
  */
 export const VoteStorage = {
-  saveVote(upi: string, record: VoteRecord): void {
-    if (typeof window !== "undefined") {
-      try {
-        const normalizedUpi = upi.toLowerCase().trim();
-        localStorage.setItem(`vote:${normalizedUpi}`, JSON.stringify(record));
-      } catch (error) {
-        console.error("Error saving vote:", error);
-      }
+  // Fetch voting data from API
+  async fetchVotingData(): Promise<{
+    commitments: Array<{ hash: string; color: string; timestamp: number }>;
+    tallies: Record<string, number>;
+    colors: Record<string, string>;
+  }> {
+    try {
+      const response = await fetch("/api/data");
+      if (!response.ok) throw new Error("Failed to fetch voting data");
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error fetching voting data:", error);
+      return { commitments: [], tallies: {}, colors: {} };
     }
   },
 
-  getVote(upi: string): VoteRecord | null {
-    if (typeof window !== "undefined") {
-      try {
-        const normalizedUpi = upi.toLowerCase().trim();
-        const stored = localStorage.getItem(`vote:${normalizedUpi}`);
-        if (!stored) return null;
-        const parsed = JSON.parse(stored);
-        // Validate the record has required fields
-        if (parsed && parsed.commitment && parsed.nullifier) {
-          return parsed;
-        }
-      } catch (error) {
-        console.error("Error getting vote:", error);
-      }
-    }
-    return null;
-  },
-
-  hasVoted(nullifier: string): boolean {
-    if (typeof window !== "undefined") {
-      try {
-        const nullifiers = this.getAllNullifiers();
-        return nullifiers.includes(nullifier);
-      } catch (error) {
-        console.error("Error checking if voted:", error);
-      }
-    }
-    return false;
-  },
-
-  getAllNullifiers(): string[] {
-    if (typeof window !== "undefined") {
-      try {
-        const nullifiers: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith("vote:")) {
-            const record = localStorage.getItem(key);
-            if (record) {
-              const parsed = JSON.parse(record);
-              if (parsed.nullifier) {
-                nullifiers.push(parsed.nullifier);
-              }
-            }
-          }
-        }
-        return nullifiers;
-      } catch (error) {
-        console.error("Error getting all nullifiers:", error);
-      }
-    }
-    return [];
-  },
-
-  getAllCommitments(): string[] {
-    if (typeof window !== "undefined") {
-      try {
-        const commitments: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith("vote:")) {
-            const record = localStorage.getItem(key);
-            if (record) {
-              const parsed = JSON.parse(record);
-              // Only include finalized commitments in the tree
-              if (parsed.commitment && parsed.finalized === true) {
-                commitments.push(parsed.commitment);
-              }
-            }
-          }
-        }
-        return commitments;
-      } catch (error) {
-        console.error("Error getting all commitments:", error);
-      }
-    }
-    return [];
-  },
-
-  getCommitmentColors(): Record<string, string> {
-    if (typeof window !== "undefined") {
-      try {
-        const colorMap: Record<string, string> = {};
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith("vote:")) {
-            const record = localStorage.getItem(key);
-            if (record) {
-              const parsed = JSON.parse(record);
-              // Only include finalized votes with colors
-              if (
-                parsed.commitment &&
-                parsed.finalized === true &&
-                parsed.voteColor
-              ) {
-                colorMap[parsed.commitment] = parsed.voteColor;
-              }
-            }
-          }
-        }
-        // Also get colors from historical commitments
-        const history = this.getAllCommitmentHistory();
-        history.forEach((record) => {
-          if (record.commitment && record.voteColor) {
-            colorMap[record.commitment] = record.voteColor;
-          }
-        });
-        return colorMap;
-      } catch (error) {
-        console.error("Error getting commitment colors:", error);
-      }
-    }
-    return {};
-  },
-
-  // Store a commitment in the historical record (for MACI-style tracking)
-  saveCommitmentToHistory(record: VoteRecord): void {
-    if (typeof window !== "undefined") {
-      try {
-        const history = this.getAllCommitmentHistory();
-        // Add new record to history (don't remove old ones)
-        history.push(record);
-        localStorage.setItem(
-          "maci-commitment-history",
-          JSON.stringify(history)
-        );
-      } catch (error) {
-        console.error("Error saving commitment to history:", error);
-      }
+  // Get all finalized commitments (from API)
+  async getAllHistoricalCommitments(): Promise<string[]> {
+    try {
+      const data = await this.fetchVotingData();
+      return data.commitments.map((c) => c.hash);
+    } catch (error) {
+      console.error("Error getting historical commitments:", error);
+      return [];
     }
   },
 
-  // Get all historical commitments (including invalidated ones)
-  getAllCommitmentHistory(): VoteRecord[] {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("maci-commitment-history");
-        if (stored) {
-          const history = JSON.parse(stored);
-          return Array.isArray(history) ? history : [];
-        }
-      } catch (error) {
-        console.error("Error getting commitment history:", error);
-      }
+  // Get commitment colors (from API)
+  async getCommitmentColors(): Promise<Record<string, string>> {
+    try {
+      const data = await this.fetchVotingData();
+      return data.colors;
+    } catch (error) {
+      console.error("Error getting commitment colors:", error);
+      return {};
     }
-    return [];
   },
 
-  // Get all finalized commitments from history
-  getAllHistoricalCommitments(): string[] {
-    const history = this.getAllCommitmentHistory();
-    return history
-      .filter((record) => record.finalized === true && record.commitment)
-      .map((record) => record.commitment);
+  // Get vote tallies (from API)
+  async getVoteTallies(): Promise<Record<string, number>> {
+    try {
+      const data = await this.fetchVotingData();
+      return data.tallies;
+    } catch (error) {
+      console.error("Error getting vote tallies:", error);
+      return {};
+    }
   },
 };

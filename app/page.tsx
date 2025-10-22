@@ -45,16 +45,6 @@ const VOTING_OPTIONS = [
 
 const VOTING_QUESTION = "Does pineapple belong on pizza?";
 
-const loadVotes = () => {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("maci-votes");
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  }
-  return {};
-};
-
 const steps = [
   {
     id: 1,
@@ -110,8 +100,9 @@ export default function MACIProcess() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [allVotes, setAllVotes] = useState<Record<string, number>>(loadVotes());
+  const [allVotes, setAllVotes] = useState<Record<string, number>>({});
   const [merkleTree] = useState(() => new MerkleTree());
+  const [commitmentId, setCommitmentId] = useState<number | null>(null);
   const [userVoteCommitment, setUserVoteCommitment] = useState<string | null>(
     null
   );
@@ -136,39 +127,32 @@ export default function MACIProcess() {
   useEffect(() => {
     if (!isInitialized && typeof window !== "undefined") {
       setIsLoading(true);
-      // Load ALL historical commitments (including old/invalidated ones - MACI style)
-      const existingCommitments = VoteStorage.getAllHistoricalCommitments();
-      const colors = VoteStorage.getCommitmentColors();
-      setLeafColors(colors);
+      // Load ALL historical commitments from API (including old/invalidated ones - MACI style)
+      VoteStorage.fetchVotingData()
+        .then(({ commitments, tallies, colors }) => {
+          setLeafColors(colors);
+          setAllVotes(tallies);
 
-      if (existingCommitments.length > 0) {
-        // Add all existing commitments to the tree
-        Promise.all(
-          existingCommitments.map((commitment) =>
-            merkleTree.addLeaf(commitment)
-          )
-        )
-          .then(() => {
-            setTreeVersion((v) => v + 1);
-            setIsInitialized(true);
-            setIsLoading(false);
-          })
-          .catch((error) => {
-            console.error("Error initializing tree:", error);
-            setIsInitialized(true);
-            setIsLoading(false);
-          });
-      } else {
-        setIsInitialized(true);
-        setIsLoading(false);
-      }
+          if (commitments.length > 0) {
+            // Add all existing commitments to the tree
+            return Promise.all(
+              commitments.map((c) => merkleTree.addLeaf(c.hash))
+            );
+          }
+          return Promise.resolve([]);
+        })
+        .then(() => {
+          setTreeVersion((v) => v + 1);
+          setIsInitialized(true);
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error("Error initializing tree:", error);
+          setIsInitialized(true);
+          setIsLoading(false);
+        });
     }
   }, [isInitialized, merkleTree]);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("maci-votes", JSON.stringify(allVotes));
-    }
-  }, [allVotes]);
 
   const nextStep = () => {
     if (currentStep < steps.length - 1) {
@@ -195,12 +179,24 @@ export default function MACIProcess() {
     const trimmedUpi = upi.trim().toLowerCase(); // Normalize UPI
 
     try {
-      // Generate nullifier from UPI
-      const userNullifier = await generateNullifier(trimmedUpi);
+      // Call signup API
+      const response = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upi: trimmedUpi }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Signup failed");
+      }
+
+      const data = await response.json();
+
+      setNullifier(data.nullifier);
 
       // Check if this user has already voted
-      const existingVote = VoteStorage.getVote(trimmedUpi);
-      if (existingVote && existingVote.commitment) {
+      if (data.hasExistingVote && data.existingVote) {
+        const existingVote = data.existingVote;
         setIsVoteUpdate(true);
         setPreviousVote(existingVote.commitment);
         setPreviousVoteOption(existingVote.voteOption || null);
@@ -213,7 +209,6 @@ export default function MACIProcess() {
           // Allow them to change their vote - clear finalized state
           setIsFinalized(false);
           setHasVoted(false);
-          // Don't restore proof - they'll get a new one after re-finalizing
           toast.success(
             "Welcome back! You can change your vote if you'd like."
           );
@@ -230,7 +225,6 @@ export default function MACIProcess() {
         toast.success("Successfully signed up!");
       }
 
-      setNullifier(userNullifier);
       setIsSignedUp(true);
       setTimeout(() => nextStep(), 800);
     } catch (error) {
@@ -248,22 +242,32 @@ export default function MACIProcess() {
     const trimmedUpi = upi.trim().toLowerCase();
 
     try {
-      // Create vote commitment (hash of UPI + vote + timestamp)
-      const commitment = await createVoteCommitment(trimmedUpi, selectedOption);
-      setUserVoteCommitment(commitment);
+      const voteColor = userVoteColor || generateRandomColor();
 
-      // Save vote record temporarily (not yet in tree)
-      const record: VoteRecord = {
-        commitment,
-        timestamp: Date.now(),
-        nullifier,
-        voteOption: selectedOption,
-        voteColor: userVoteColor || generateRandomColor(),
-      };
-      VoteStorage.saveVote(trimmedUpi, record);
+      // Call vote API
+      const response = await fetch("/api/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          upi: trimmedUpi,
+          voteOption: selectedOption,
+          voteColor,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to cast vote");
+      }
+
+      const data = await response.json();
+      setUserVoteCommitment(data.commitment);
+      setCommitmentId(data.commitmentId);
+
+      if (data.isUpdate && data.previousVoteOption) {
+        setPreviousVoteOption(data.previousVoteOption);
+      }
 
       setHasVoted(true);
-
       toast.success("Vote ready to finalize!");
 
       // Return to tree view after voting
@@ -311,7 +315,7 @@ export default function MACIProcess() {
   };
 
   const handleFinalize = async () => {
-    if (!selectedOption || !userVoteCommitment) {
+    if (!selectedOption || !userVoteCommitment || !commitmentId) {
       toast.error("No vote to finalize");
       return;
     }
@@ -322,7 +326,51 @@ export default function MACIProcess() {
     }
 
     try {
-      // If updating vote, decrement old vote count (but keep old commitment in tree - MACI style)
+      // Add new commitment to Merkle tree (old one stays in tree but is invalidated)
+      await merkleTree.addLeaf(userVoteCommitment);
+      setTreeVersion((v) => v + 1);
+
+      // Generate proof (wait a moment to ensure tree is fully built)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const proof = await merkleTree.generateProof(userVoteCommitment);
+      let verified = false;
+
+      if (proof) {
+        verified = await merkleTree.verifyProof(proof);
+        setUserMerkleProof(proof);
+        setProofVerified(verified);
+      } else {
+        console.error(
+          "Failed to generate proof for commitment:",
+          userVoteCommitment
+        );
+        setProofVerified(false);
+      }
+
+      // Call finalize API
+      const response = await fetch("/api/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          commitmentId,
+          voteOption: selectedOption,
+          previousVoteOption: isVoteUpdate ? previousVoteOption : null,
+          proofData: proof
+            ? {
+                leaf: proof.leaf,
+                root: proof.root,
+                proof: { path: proof.path },
+                verified,
+              }
+            : null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to finalize vote");
+      }
+
+      // Update local state
       if (isVoteUpdate && previousVoteOption) {
         setAllVotes((prev) => ({
           ...prev,
@@ -333,65 +381,20 @@ export default function MACIProcess() {
         }));
       }
 
-      // Add new commitment to Merkle tree (old one stays in tree but is invalidated)
-      await merkleTree.addLeaf(userVoteCommitment);
-      setTreeVersion((v) => v + 1);
-
-      // Generate proof (wait a moment to ensure tree is fully built)
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const proof = await merkleTree.generateProof(userVoteCommitment);
-      if (proof) {
-        setUserMerkleProof(proof);
-        const verified = await merkleTree.verifyProof(proof);
-        console.log("Proof verification result:", verified);
-        console.log("Proof:", proof);
-        console.log("Tree root:", merkleTree.getRoot());
-        setProofVerified(verified);
-      } else {
-        console.error(
-          "Failed to generate proof for commitment:",
-          userVoteCommitment
-        );
-        setProofVerified(false);
-      }
-
-      // Add the vote to the tally
       setAllVotes((prev) => ({
         ...prev,
         [selectedOption]: (prev[selectedOption] || 0) + 1,
       }));
 
-      // Update vote record with finalized status and proof
-      if (upi && nullifier) {
-        const trimmedUpi = upi.trim().toLowerCase();
-        const voteColor = userVoteColor || generateRandomColor();
-        const record: VoteRecord = {
-          commitment: userVoteCommitment,
-          timestamp: Date.now(),
-          nullifier,
-          voteOption: selectedOption,
-          voteColor,
-          finalized: true,
-          merkleProof: proof || undefined,
-        };
-        // Save as current vote for this user
-        VoteStorage.saveVote(trimmedUpi, record);
-
-        // Also save to commitment history (MACI style - keeps all votes)
-        VoteStorage.saveCommitmentToHistory(record);
-
-        // Update leaf colors mapping (add new vote color, keep old one in tree)
-        setLeafColors((prev) => ({
-          ...prev,
-          [userVoteCommitment]: voteColor,
-        }));
-      }
+      // Update leaf colors mapping
+      const voteColor = userVoteColor || generateRandomColor();
+      setLeafColors((prev) => ({
+        ...prev,
+        [userVoteCommitment]: voteColor,
+      }));
 
       setIsFinalized(true);
       toast.success("Vote finalized and added to the tree!");
-
-      // Stay in tree view to show the vote in the Merkle tree
-      // setViewMode("vote"); // Removed - no need to switch views
     } catch (error) {
       console.error("Error finalizing vote:", error);
       toast.error("Failed to finalize vote. Please try again.");
