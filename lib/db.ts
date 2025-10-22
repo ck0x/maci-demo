@@ -77,7 +77,7 @@ export const db = {
   ): Promise<DbVoteCommitment | null> {
     const result = await sql`
       SELECT * FROM vote_commitments 
-      WHERE id = ${userId} AND is_current = TRUE 
+      WHERE user_id = ${userId} AND is_current = TRUE 
       LIMIT 1
     `;
     return (result[0] as DbVoteCommitment) || null;
