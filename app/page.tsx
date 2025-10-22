@@ -114,6 +114,9 @@ export default function MACIProcess() {
   const [isFinalized, setIsFinalized] = useState(false);
   const [userVoteColor, setUserVoteColor] = useState<string | null>(null);
   const [leafColors, setLeafColors] = useState<Record<string, string>>({});
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [isCastingVote, setIsCastingVote] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   // Initialize Merkle tree with existing commitments on mount
   useEffect(() => {
@@ -162,6 +165,9 @@ export default function MACIProcess() {
       toast.error("Please enter your UPI");
       return;
     }
+
+    if (isSigningUp) return; // Prevent double-click
+    setIsSigningUp(true);
 
     const trimmedUpi = upi.trim().toLowerCase(); // Normalize UPI
 
@@ -213,6 +219,8 @@ export default function MACIProcess() {
     } catch (error) {
       console.error("Error during signup:", error);
       toast.error("Failed to sign up. Please try again.");
+    } finally {
+      setIsSigningUp(false);
     }
   };
 
@@ -221,6 +229,9 @@ export default function MACIProcess() {
       toast.error("Please select an option");
       return;
     }
+
+    if (isCastingVote) return; // Prevent double-click
+    setIsCastingVote(true);
 
     const trimmedUpi = upi.trim().toLowerCase();
 
@@ -258,6 +269,8 @@ export default function MACIProcess() {
     } catch (error) {
       console.error("Error casting vote:", error);
       toast.error("Failed to cast vote. Please try again.");
+    } finally {
+      setIsCastingVote(false);
     }
   };
 
@@ -271,6 +284,9 @@ export default function MACIProcess() {
       toast.error("Vote already finalized");
       return;
     }
+
+    if (isFinalizing) return; // Prevent double-click
+    setIsFinalizing(true);
 
     try {
       // Add new commitment to Merkle tree (old one stays in tree but is invalidated)
@@ -344,6 +360,8 @@ export default function MACIProcess() {
     } catch (error) {
       console.error("Error finalizing vote:", error);
       toast.error("Failed to finalize vote. Please try again.");
+    } finally {
+      setIsFinalizing(false);
     }
   };
 
@@ -466,8 +484,9 @@ export default function MACIProcess() {
                       onClick={handleFinalize}
                       size="lg"
                       className="bg-green-600 hover:bg-green-700"
+                      disabled={isFinalizing}
                     >
-                      ✓ Submit Vote
+                      {isFinalizing ? "Submitting..." : "✓ Submit Vote"}
                     </Button>
                   </div>
                 </div>
@@ -677,11 +696,11 @@ export default function MACIProcess() {
                             </div>
                             <Button
                               onClick={handleSignUp}
-                              disabled={!upi.trim()}
+                              disabled={!upi.trim() || isSigningUp}
                               size="lg"
                               className="w-full text-lg"
                             >
-                              Sign Up to Vote
+                              {isSigningUp ? "Signing up..." : "Sign Up to Vote"}
                             </Button>
                           </>
                         ) : (
@@ -748,13 +767,13 @@ export default function MACIProcess() {
                             <button
                               key={option.id}
                               onClick={() => setSelectedOption(option.id)}
-                              disabled={hasVoted}
+                              disabled={hasVoted || isCastingVote}
                               className={`p-3 md:p-4 rounded-lg border-2 transition-all text-left flex items-center gap-2 md:gap-3 ${
                                 selectedOption === option.id
                                   ? "border-primary bg-primary/10 scale-105 shadow-lg"
                                   : "border-border bg-white dark:bg-gray-800 hover:border-primary/50 active:scale-95"
                               } ${
-                                hasVoted
+                                hasVoted || isCastingVote
                                   ? "opacity-50 cursor-not-allowed"
                                   : "cursor-pointer"
                               }`}
@@ -804,11 +823,13 @@ export default function MACIProcess() {
                         {!hasVoted ? (
                           <Button
                             onClick={handleCastVote}
-                            disabled={!selectedOption}
+                            disabled={!selectedOption || isCastingVote}
                             size="lg"
                             className="w-full text-base md:text-lg mt-4"
                           >
-                            {isVoteUpdate
+                            {isCastingVote
+                              ? "Casting vote..."
+                              : isVoteUpdate
                               ? "🔄 Update My Vote"
                               : "Cast Encrypted Vote"}
                           </Button>
