@@ -17,6 +17,7 @@ import {
 import {
   generateNullifier,
   createVoteCommitment,
+  generateRandomColor,
   MerkleTree,
   VoteStorage,
   type MerkleProof,
@@ -30,22 +31,21 @@ import {
 const VOTING_OPTIONS = [
   {
     id: "option-a",
-    label: "Blockchain Scalability",
-    emoji: "⚡",
+    label: "Yes, absolutely!",
+    emoji: "🍍",
     color: "#f59e0b",
   },
   {
     id: "option-b",
-    label: "Privacy & Security",
-    emoji: "🔒",
-    color: "#8b5cf6",
+    label: "No, never!",
+    emoji: "�",
+    color: "#ef4444",
   },
-  { id: "option-c", label: "Decentralization", emoji: "🌐", color: "#06b6d4" },
-  { id: "option-d", label: "User Experience", emoji: "✨", color: "#ec4899" },
+  { id: "option-c", label: "I don't care", emoji: "🤷", color: "#6b7280" },
+  { id: "option-d", label: "Only with ham", emoji: "🍖", color: "#ec4899" },
 ];
 
-const VOTING_QUESTION =
-  "What's the most important challenge in blockchain voting?";
+const VOTING_QUESTION = "Does pineapple belong on pizza?";
 
 const loadVotes = () => {
   if (typeof window !== "undefined") {
@@ -104,7 +104,8 @@ const steps = [
 ];
 
 export default function MACIProcess() {
-  const [currentStep, setCurrentStep] = useState(0);
+  const [viewMode, setViewMode] = useState<"tree" | "vote">("tree"); // Default to tree view
+  const [currentStep, setCurrentStep] = useState(0); // For voting flow
   const [isSignedUp, setIsSignedUp] = useState(false);
   const [upi, setUpi] = useState("");
   const [nullifier, setNullifier] = useState<string | null>(null);
@@ -130,6 +131,7 @@ export default function MACIProcess() {
   const [isLoading, setIsLoading] = useState(true);
   const [isFinalized, setIsFinalized] = useState(false);
   const [showAntiCoercionModal, setShowAntiCoercionModal] = useState(false);
+  const [userVoteColor, setUserVoteColor] = useState<string | null>(null);
 
   // Initialize Merkle tree with existing commitments on mount
   useEffect(() => {
@@ -200,12 +202,16 @@ export default function MACIProcess() {
         setIsVoteUpdate(true);
         setPreviousVote(existingVote.commitment);
         setPreviousVoteOption(existingVote.voteOption || null);
+        // Restore their existing color
+        setUserVoteColor(existingVote.voteColor || generateRandomColor());
         toast.success("Welcome back! You can update your vote");
         setShowAntiCoercionModal(true); // Show modal for returning voters
       } else {
         setIsVoteUpdate(false);
         setPreviousVote(null);
         setPreviousVoteOption(null);
+        // Generate a new random color for new voters
+        setUserVoteColor(generateRandomColor());
         toast.success("Successfully signed up!");
       }
 
@@ -246,18 +252,28 @@ export default function MACIProcess() {
         timestamp: Date.now(),
         nullifier,
         voteOption: selectedOption, // Store the vote option for tracking
+        voteColor: userVoteColor || generateRandomColor(), // Store the random color
       };
       VoteStorage.saveVote(trimmedUpi, record);
 
       setHasVoted(true);
 
-      if (isVoteUpdate) {
-        toast.success("Vote updated successfully!");
-      } else {
-        toast.success("Vote cast successfully!");
+      // Generate proof automatically
+      const proof = await merkleTree.generateProof(commitment);
+      if (proof) {
+        setUserMerkleProof(proof);
+        const verified = await merkleTree.verifyProof(proof);
+        setProofVerified(verified);
       }
 
-      setTimeout(() => nextStep(), 800);
+      if (isVoteUpdate) {
+        toast.success("Vote updated! Check the tree to see your colored vote.");
+      } else {
+        toast.success("Vote cast! Look for your colored vote in the tree.");
+      }
+
+      // Return to tree view after voting
+      setTimeout(() => setViewMode("tree"), 1000);
     } catch (error) {
       console.error("Error casting vote:", error);
       toast.error("Failed to cast vote. Please try again.");
@@ -344,6 +360,7 @@ export default function MACIProcess() {
     setPreviousVoteOption(null);
     setIsVoteUpdate(false);
     setIsFinalized(false);
+    setUserVoteColor(null);
   };
 
   const getTotalVotes = () => {
@@ -369,45 +386,246 @@ export default function MACIProcess() {
     );
   }
 
+  // Tree View (Default)
+  if (viewMode === "tree") {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        {/* Header */}
+        <div className="py-4 md:py-6 px-4 md:px-8 border-b bg-card">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-foreground">
+                🍕 Pineapple Pizza Vote
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Zero-Knowledge Merkle Tree Visualization
+              </p>
+            </div>
+            {!hasVoted && (
+              <Button
+                onClick={() => {
+                  setViewMode("vote");
+                  setCurrentStep(0);
+                }}
+                size="lg"
+                className="text-base md:text-lg"
+              >
+                <Vote className="w-5 h-5 mr-2" />
+                Place Vote
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <main className="flex-1 px-4 md:px-8 py-6 md:py-12">
+          <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
+            {/* What Just Happened? */}
+            {hasVoted && (
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 md:p-6 border-2 border-green-300 dark:border-green-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+                  <h4 className="font-bold text-base md:text-lg text-foreground">
+                    Your Vote is Secured!
+                  </h4>
+                </div>
+                <div className="space-y-2 text-sm md:text-base text-foreground/90">
+                  <p>
+                    ✅ <strong>Your vote is private:</strong> Only you know what
+                    you voted for
+                  </p>
+                  <p>
+                    ✅ <strong>Your vote is in the tree:</strong> Look for your
+                    colored signature below
+                  </p>
+                  <p>
+                    ✅ <strong>Anti-coercion enabled:</strong> You can update
+                    your vote anytime before finalization
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Color Explanation */}
+            {userVoteColor && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 md:p-6 border border-blue-200 dark:border-blue-800">
+                <div className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  🎨 Your Secret Color
+                </div>
+                <div className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 border mb-3">
+                  <div
+                    className="w-8 h-8 rounded-full border-2 border-white shadow-md animate-pulse"
+                    style={{ backgroundColor: userVoteColor }}
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Only you know what this means!
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Each voter gets a random color for privacy
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Merkle Tree Visualization */}
+            <div className="bg-card rounded-lg border p-4 md:p-6">
+              <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                🌳 Merkle Tree - All Votes Secured
+              </h3>
+              <div className="overflow-x-auto">
+                <MerkleTreeVisualization
+                  tree={merkleTree.getTreeStructure()}
+                  highlightLeaf={hasVoted && nullifier ? nullifier : undefined}
+                  highlightColor={userVoteColor || undefined}
+                />
+              </div>
+            </div>
+
+            {/* Your Proof */}
+            {userMerkleProof && userVoteColor && proofVerified && (
+              <div className="bg-card rounded-lg border p-4 md:p-6">
+                <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                  🔐 Your Cryptographic Proof
+                </h3>
+                <MerkleProofDisplay
+                  proof={userMerkleProof}
+                  verified={proofVerified}
+                  voteColor={userVoteColor}
+                />
+              </div>
+            )}
+
+            {/* Vote Tallies */}
+            <div className="bg-card rounded-lg border p-4 md:p-6">
+              <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                📊 Current Results
+              </h3>
+              <div className="space-y-4">
+                {VOTING_OPTIONS.map((option) => {
+                  const votes = allVotes[option.id] || 0;
+                  const percentage = getVotePercentage(option.id);
+                  return (
+                    <div key={option.id} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm md:text-base">
+                        <span className="font-medium text-foreground flex items-center gap-2">
+                          <div
+                            className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
+                            style={{ backgroundColor: option.color }}
+                          />
+                          <span className="text-xl">{option.emoji}</span>
+                          <span>{option.label}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          {votes} ({percentage}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-white dark:bg-gray-800 rounded-full h-3 border border-border overflow-hidden">
+                        <div
+                          className="h-full transition-all duration-500 rounded-full"
+                          style={{
+                            width: `${percentage}%`,
+                            background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-6">
+                <div className="bg-background rounded-lg p-4 border text-center">
+                  <div className="text-2xl font-bold text-foreground">
+                    {getTotalVotes()}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Total Votes
+                  </div>
+                </div>
+                <div className="bg-background rounded-lg p-4 border text-center">
+                  <div className="text-2xl font-bold text-foreground">
+                    {merkleTree.getLeaves().length}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Tree Leaves
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            {hasVoted && (
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button
+                  onClick={() => {
+                    setViewMode("vote");
+                    setCurrentStep(0);
+                  }}
+                  size="lg"
+                  variant="outline"
+                  className="flex-1"
+                >
+                  🔄 Update My Vote
+                </Button>
+                <Button
+                  onClick={handleFinalize}
+                  size="lg"
+                  className="flex-1"
+                  disabled={isFinalized}
+                >
+                  {isFinalized ? "✓ Vote Finalized" : "Finalize My Vote"}
+                </Button>
+              </div>
+            )}
+
+            {/* Anti-Coercion Info */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 rounded-lg p-4 md:p-6 border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">🔄</span>
+                <h4 className="font-semibold text-sm md:text-base text-foreground">
+                  Anti-Coercion Feature
+                </h4>
+              </div>
+              <p className="text-sm text-foreground/80 leading-relaxed">
+                You can change your vote as many times as needed before
+                finalization. This prevents vote buying and coercion - even if
+                someone forces you to vote a certain way, you can change it
+                later!
+              </p>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="py-4 px-4 text-center border-t text-sm text-muted-foreground">
+          <p>Interactive demo of MACI voting with Zero-Knowledge Proofs</p>
+        </footer>
+
+        <Toaster position="top-center" richColors />
+      </div>
+    );
+  }
+
+  // Voting Flow View
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Progress Indicator */}
-      <div className="py-4 md:py-8 px-2 md:px-4 border-b bg-card">
-        <div className="flex items-center justify-center">
-          <div className="flex items-center gap-1 md:gap-2">
-            {steps.map((s, index) => (
-              <div key={s.id} className="flex items-center">
-                <button
-                  onClick={() => goToStep(index)}
-                  className={`flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border-2 transition-all ${
-                    index === currentStep
-                      ? `${s.borderColor} ${s.bgColor} scale-110`
-                      : index < currentStep
-                      ? `${s.borderColor} ${s.bgColor}`
-                      : "border-border bg-muted"
-                  }`}
-                  aria-label={`Go to step ${index + 1}`}
-                >
-                  <span className="text-xs md:text-sm font-bold">
-                    {index + 1}
-                  </span>
-                </button>
-                {index < steps.length - 1 && (
-                  <div
-                    className={`w-4 md:w-8 h-1 mx-1 md:mx-2 rounded transition-all ${
-                      index < currentStep ? "bg-primary" : "bg-border"
-                    }`}
-                  />
-                )}
-              </div>
-            ))}
+      {/* Header with Back Button */}
+      <div className="py-4 md:py-6 px-4 md:px-8 border-b bg-card">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <Button onClick={() => setViewMode("tree")} variant="ghost" size="sm">
+            <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+            Back to Tree
+          </Button>
+          <div className="text-sm text-muted-foreground">
+            Step {currentStep + 1} of 2
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center px-3 md:px-4 py-6 md:py-12">
-        <div className="max-w-3xl w-full">
+      <main className="flex-1 flex items-center justify-center px-4 py-6 md:py-12">
+        <div className="max-w-2xl w-full">
           <div
             className={`${step.bgColor} ${step.borderColor} border-2 md:border-4 rounded-xl md:rounded-2xl p-4 md:p-8 lg:p-12 shadow-lg transition-all duration-500 ease-in-out`}
           >
@@ -424,22 +642,19 @@ export default function MACIProcess() {
 
               {/* Step Number */}
               <div className="text-xs md:text-sm font-semibold text-muted-foreground">
-                STEP {step.id} OF {steps.length}
+                {currentStep === 0 ? "STEP 1: SIGN UP" : "STEP 2: CAST VOTE"}
               </div>
 
               {/* Title */}
               <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-foreground text-balance px-2">
-                {step.title}
+                {currentStep === 0 ? "Sign Up to Vote" : VOTING_QUESTION}
               </h2>
 
               {/* Description */}
               <p className="text-base md:text-xl text-foreground/90 leading-relaxed text-balance px-2">
-                {step.description}
-              </p>
-
-              {/* Details */}
-              <p className="text-sm md:text-base text-foreground/70 leading-relaxed max-w-2xl text-pretty px-2">
-                {step.details}
+                {currentStep === 0
+                  ? "Enter your UPI to generate your anonymous voting identity"
+                  : "Select your answer below"}
               </p>
 
               <div className="w-full max-w-md mt-4 md:mt-6">
@@ -579,23 +794,22 @@ export default function MACIProcess() {
                         </button>
                       ))}
                     </div>
-                    {selectedOption && !hasVoted && (
+                    {selectedOption && !hasVoted && userVoteColor && (
                       <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-2.5 md:p-3 border border-indigo-200 dark:border-indigo-800">
                         <div className="flex items-start gap-2">
                           <div
                             className="w-4 h-4 md:w-5 md:h-5 rounded-full border-2 border-white shadow-sm mt-0.5 flex-shrink-0"
                             style={{
-                              backgroundColor: VOTING_OPTIONS.find(
-                                (opt) => opt.id === selectedOption
-                              )?.color,
+                              backgroundColor: userVoteColor,
                             }}
                           />
                           <div className="text-xs text-foreground/80 leading-relaxed">
                             <span className="font-semibold">
                               Your vote will be encrypted
                             </span>{" "}
-                            with this color signature. Only you will know what
-                            it represents - it's your secret proof!
+                            with this RANDOM color signature. Only you will know
+                            what it represents - nobody can tell what you voted
+                            for by the color!
                           </div>
                         </div>
                       </div>
@@ -621,245 +835,12 @@ export default function MACIProcess() {
                     )}
                   </div>
                 )}
-
-                {/* Step 3: Processing */}
-                {currentStep === 2 && (
-                  <div className="space-y-4">
-                    <div className="bg-background/50 rounded-lg p-3 md:p-4 border">
-                      <h4 className="font-semibold text-xs md:text-sm text-foreground mb-2 md:mb-3">
-                        Merkle Tree Structure
-                      </h4>
-                      <MerkleTreeVisualization
-                        tree={merkleTree.getTreeStructure()}
-                        highlightLeaf={userVoteCommitment || undefined}
-                      />
-                    </div>
-                    {!isProcessing ? (
-                      <Button
-                        onClick={handleProcessing}
-                        size="lg"
-                        className="w-full text-base md:text-lg"
-                      >
-                        Generate Zero-Knowledge Proof
-                      </Button>
-                    ) : (
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
-                        <p className="text-foreground font-semibold">
-                          Generating cryptographic proofs...
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Step 4: Results */}
-                {currentStep === 3 && (
-                  <div className="space-y-2.5 md:space-y-4">
-                    <h3 className="font-semibold text-base md:text-lg text-foreground mb-2 md:mb-4">
-                      Zero-Knowledge Verified Results
-                    </h3>
-                    {/* Color Legend - More compact on mobile */}
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-2 md:p-3 border border-blue-200 dark:border-blue-800">
-                      <div className="text-xs font-semibold text-foreground mb-1 md:mb-2">
-                        🎨 Color Signatures
-                      </div>
-                      <div className="flex flex-wrap gap-1 md:gap-2">
-                        {VOTING_OPTIONS.map((option) => (
-                          <div
-                            key={option.id}
-                            className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded px-1.5 py-0.5 md:px-2 md:py-1 text-xs"
-                          >
-                            <div
-                              className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full border-2 border-white shadow-sm"
-                              style={{ backgroundColor: option.color }}
-                            />
-                            <span className="text-foreground/70 text-xs">
-                              {option.emoji} {option.label.split(" ")[0]}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-foreground/70 mt-1 md:mt-2 hidden md:block">
-                        Your vote appears as a colored dot in the proof - but
-                        only YOU know what it represents!
-                      </p>
-                    </div>
-                    {/* Merkle Root Display - Compact version */}
-                    <div className="bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30 rounded-lg p-2.5 md:p-4 border border-purple-300 dark:border-purple-700">
-                      <div className="flex items-center gap-2 mb-1.5 md:mb-2">
-                        <Shield className="w-4 h-4 md:w-5 md:h-5 text-purple-700 dark:text-purple-400" />
-                        <h4 className="font-semibold text-xs md:text-sm text-foreground">
-                          Merkle Root
-                        </h4>
-                      </div>
-                      <div className="font-mono text-xs text-foreground break-all bg-white/50 dark:bg-black/20 rounded p-1.5 md:p-2">
-                        {merkleTree.getRoot() || "No votes yet"}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1.5 md:mt-2 hidden md:block">
-                        This hash represents ALL votes cryptographically.
-                      </p>
-                    </div>
-                    {/* User's Merkle Proof */}
-                    {userMerkleProof && selectedOption && (
-                      <MerkleProofDisplay
-                        proof={userMerkleProof}
-                        verified={proofVerified}
-                        voteColor={
-                          VOTING_OPTIONS.find(
-                            (opt) => opt.id === selectedOption
-                          )?.color
-                        }
-                      />
-                    )}
-                    {/* Vote Tallies */}
-                    {/* Vote Tallies - More compact */}
-                    <div className="space-y-2 md:space-y-3 bg-muted/20 rounded-lg p-2.5 md:p-4">
-                      <h4 className="font-semibold text-xs md:text-sm text-foreground">
-                        Verified Vote Tallies
-                      </h4>
-                      {VOTING_OPTIONS.map((option) => {
-                        const votes = allVotes[option.id] || 0;
-                        const percentage = getVotePercentage(option.id);
-                        return (
-                          <div
-                            key={option.id}
-                            className="space-y-1 md:space-y-2"
-                          >
-                            <div className="flex items-center justify-between text-xs md:text-sm">
-                              <span className="font-medium text-foreground flex items-center gap-1.5 md:gap-2">
-                                <div
-                                  className="w-3 h-3 md:w-4 md:h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0"
-                                  style={{ backgroundColor: option.color }}
-                                />
-                                <span className="text-base md:text-xl">
-                                  {option.emoji}
-                                </span>
-                                <span className="hidden sm:inline">
-                                  {option.label}
-                                </span>
-                                <span className="sm:hidden">
-                                  {option.label.split(" ")[0]}
-                                </span>
-                              </span>
-                              <span className="text-muted-foreground text-xs md:text-sm whitespace-nowrap">
-                                {votes} ({percentage}%)
-                              </span>
-                            </div>
-                            <div className="w-full bg-white dark:bg-gray-800 rounded-full h-2 md:h-3 border border-border overflow-hidden">
-                              <div
-                                className="h-full transition-all duration-500 rounded-full shadow-sm"
-                                style={{
-                                  width: `${percentage}%`,
-                                  background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 gap-2 md:gap-3 text-center">
-                      <div className="bg-background rounded-lg p-2 md:p-3 border">
-                        <div className="text-xl md:text-2xl font-bold text-foreground">
-                          {getTotalVotes()}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Total Votes
-                        </div>
-                      </div>
-                      <div className="bg-background rounded-lg p-2 md:p-3 border">
-                        <div className="text-xl md:text-2xl font-bold text-foreground">
-                          {merkleTree.getLeaves().length}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Tree Leaves
-                        </div>
-                      </div>
-                    </div>
-                    {/* MACI Vote Update Info */}
-                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 rounded-lg p-2.5 md:p-4 border border-amber-200 dark:border-amber-800">
-                      <div className="flex items-center gap-2 mb-1 md:mb-2">
-                        <span className="text-lg md:text-2xl">🔄</span>
-                        <h4 className="font-semibold text-xs md:text-sm text-foreground">
-                          Anti-Coercion Feature
-                        </h4>
-                      </div>
-                      <p className="text-xs text-foreground/80 leading-relaxed">
-                        In MACI, you can change your vote as many times as
-                        needed before voting ends. This prevents vote buying and
-                        coercion - even if someone forces you to vote a certain
-                        way, you can change it later! Only your{" "}
-                        <span className="font-bold">final vote</span> counts.
-                      </p>
-                    </div>
-                    {hasVoted && (
-                      <Button
-                        onClick={handleFinalize}
-                        size="lg"
-                        className="w-full text-lg mt-4"
-                        disabled={isFinalized}
-                      >
-                        {isFinalized ? "✓ Vote Finalized" : "Finalize My Vote"}
-                      </Button>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
-          </div>
-
-          {/* Navigation Buttons */}
-          <div className="flex items-center justify-between mt-6 md:mt-8 gap-2 md:gap-4">
-            <Button
-              onClick={prevStep}
-              disabled={currentStep === 0}
-              variant="outline"
-              size="default"
-              className="gap-1 md:gap-2 bg-transparent text-sm md:text-base"
-            >
-              <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
-              <span className="hidden sm:inline">Previous</span>
-              <span className="sm:hidden">Prev</span>
-            </Button>
-
-            <div className="text-xs md:text-sm text-muted-foreground">
-              {currentStep + 1} / {steps.length}
-            </div>
-
-            {currentStep === steps.length - 1 ? (
-              <Button
-                onClick={resetVoting}
-                size="default"
-                className="gap-1 md:gap-2 text-sm md:text-base"
-              >
-                <span className="hidden sm:inline">
-                  🔄 Update Vote / Vote Again
-                </span>
-                <span className="sm:hidden">🔄 Vote Again</span>
-              </Button>
-            ) : (
-              <Button
-                onClick={nextStep}
-                disabled={currentStep === steps.length - 1}
-                size="default"
-                className="gap-1 md:gap-2 text-sm md:text-base"
-              >
-                Next
-                <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
-              </Button>
-            )}
           </div>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="py-4 md:py-6 px-3 md:px-4 text-center border-t text-xs md:text-sm text-muted-foreground">
-        <p>Interactive demo of MACI voting process</p>
-      </footer>
-
-      {/* Toast Notifications */}
       <Toaster position="top-center" richColors />
     </div>
   );

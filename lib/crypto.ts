@@ -216,7 +216,18 @@ export interface VoteRecord {
   timestamp: number;
   nullifier: string;
   voteOption?: string; // Store vote option for updates
+  voteColor?: string; // Random color for visualization
   merkleProof?: MerkleProof;
+}
+
+/**
+ * Generate a random color for vote visualization
+ */
+export function generateRandomColor(): string {
+  const hue = Math.floor(Math.random() * 360);
+  const saturation = 60 + Math.floor(Math.random() * 30); // 60-90%
+  const lightness = 50 + Math.floor(Math.random() * 20); // 50-70%
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
 /**
