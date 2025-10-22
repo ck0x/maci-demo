@@ -218,6 +218,7 @@ export interface VoteRecord {
   voteOption?: string; // Store vote option for updates
   voteColor?: string; // Random color for visualization
   merkleProof?: MerkleProof;
+  finalized?: boolean; // Track if vote has been added to tree
 }
 
 /**

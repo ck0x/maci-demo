@@ -202,15 +202,29 @@ export default function MACIProcess() {
         setIsVoteUpdate(true);
         setPreviousVote(existingVote.commitment);
         setPreviousVoteOption(existingVote.voteOption || null);
-        // Restore their existing color
         setUserVoteColor(existingVote.voteColor || generateRandomColor());
-        toast.success("Welcome back! You can update your vote");
-        setShowAntiCoercionModal(true); // Show modal for returning voters
+        setUserVoteCommitment(existingVote.commitment);
+        setSelectedOption(existingVote.voteOption || null);
+        
+        // Check if vote was already finalized
+        if (existingVote.finalized) {
+          setIsFinalized(true);
+          setHasVoted(true);
+          // Restore proof if available
+          if (existingVote.merkleProof) {
+            setUserMerkleProof(existingVote.merkleProof);
+            setProofVerified(true);
+          }
+          toast.success("Welcome back! Your vote is finalized.");
+        } else {
+          setHasVoted(true);
+          toast.success("Welcome back! Your vote is ready to finalize.");
+        }
+        setShowAntiCoercionModal(true);
       } else {
         setIsVoteUpdate(false);
         setPreviousVote(null);
         setPreviousVoteOption(null);
-        // Generate a new random color for new voters
         setUserVoteColor(generateRandomColor());
         toast.success("Successfully signed up!");
       }
@@ -233,44 +247,23 @@ export default function MACIProcess() {
     const trimmedUpi = upi.trim().toLowerCase();
 
     try {
-      // If updating vote, remove old commitment from tree
-      if (isVoteUpdate && previousVote) {
-        await merkleTree.removeLeaf(previousVote);
-      }
-
       // Create vote commitment (hash of UPI + vote + timestamp)
       const commitment = await createVoteCommitment(trimmedUpi, selectedOption);
       setUserVoteCommitment(commitment);
 
-      // Add commitment to Merkle tree
-      await merkleTree.addLeaf(commitment);
-      setTreeVersion((v) => v + 1);
-
-      // Save vote record (this updates the previous vote if it exists)
+      // Save vote record temporarily (not yet in tree)
       const record: VoteRecord = {
         commitment,
         timestamp: Date.now(),
         nullifier,
-        voteOption: selectedOption, // Store the vote option for tracking
-        voteColor: userVoteColor || generateRandomColor(), // Store the random color
+        voteOption: selectedOption,
+        voteColor: userVoteColor || generateRandomColor(),
       };
       VoteStorage.saveVote(trimmedUpi, record);
 
       setHasVoted(true);
 
-      // Generate proof automatically
-      const proof = await merkleTree.generateProof(commitment);
-      if (proof) {
-        setUserMerkleProof(proof);
-        const verified = await merkleTree.verifyProof(proof);
-        setProofVerified(verified);
-      }
-
-      if (isVoteUpdate) {
-        toast.success("Vote updated! Check the tree to see your colored vote.");
-      } else {
-        toast.success("Vote cast! Look for your colored vote in the tree.");
-      }
+      toast.success("Vote ready to finalize!");
 
       // Return to tree view after voting
       setTimeout(() => setViewMode("tree"), 1000);
@@ -316,9 +309,9 @@ export default function MACIProcess() {
     }, 2000);
   };
 
-  const handleFinalize = () => {
-    if (!selectedOption) {
-      toast.error("No vote option selected");
+  const handleFinalize = async () => {
+    if (!selectedOption || !userVoteCommitment) {
+      toast.error("No vote to finalize");
       return;
     }
 
@@ -327,22 +320,60 @@ export default function MACIProcess() {
       return;
     }
 
-    // If updating vote, decrement the old vote count first
-    if (isVoteUpdate && previousVoteOption) {
+    try {
+      // If updating vote, remove old commitment from tree and decrement old vote count
+      if (isVoteUpdate && previousVote) {
+        await merkleTree.removeLeaf(previousVote);
+        if (previousVoteOption) {
+          setAllVotes((prev) => ({
+            ...prev,
+            [previousVoteOption]: Math.max(
+              (prev[previousVoteOption] || 0) - 1,
+              0
+            ),
+          }));
+        }
+      }
+
+      // Add commitment to Merkle tree
+      await merkleTree.addLeaf(userVoteCommitment);
+      setTreeVersion((v) => v + 1);
+
+      // Generate proof
+      const proof = await merkleTree.generateProof(userVoteCommitment);
+      if (proof) {
+        setUserMerkleProof(proof);
+        const verified = await merkleTree.verifyProof(proof);
+        setProofVerified(verified);
+      }
+
+      // Add the vote to the tally
       setAllVotes((prev) => ({
         ...prev,
-        [previousVoteOption]: Math.max((prev[previousVoteOption] || 0) - 1, 0),
+        [selectedOption]: (prev[selectedOption] || 0) + 1,
       }));
+
+      // Update vote record with finalized status and proof
+      if (upi && nullifier) {
+        const trimmedUpi = upi.trim().toLowerCase();
+        const record: VoteRecord = {
+          commitment: userVoteCommitment,
+          timestamp: Date.now(),
+          nullifier,
+          voteOption: selectedOption,
+          voteColor: userVoteColor || generateRandomColor(),
+          finalized: true,
+          merkleProof: proof || undefined,
+        };
+        VoteStorage.saveVote(trimmedUpi, record);
+      }
+
+      setIsFinalized(true);
+      toast.success("Vote finalized and added to the tree!");
+    } catch (error) {
+      console.error("Error finalizing vote:", error);
+      toast.error("Failed to finalize vote. Please try again.");
     }
-
-    // Then add the new vote
-    setAllVotes((prev) => ({
-      ...prev,
-      [selectedOption]: (prev[selectedOption] || 0) + 1,
-    }));
-
-    setIsFinalized(true);
-    toast.success("Vote finalized!");
   };
 
   const resetVoting = () => {
@@ -390,85 +421,9 @@ export default function MACIProcess() {
   if (viewMode === "tree") {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        {/* Header */}
-        <div className="py-4 md:py-6 px-4 md:px-8 border-b bg-card">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold text-foreground">
-                🍕 Pineapple Pizza Vote
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Zero-Knowledge Merkle Tree Visualization
-              </p>
-            </div>
-            {!hasVoted && (
-              <Button
-                onClick={() => {
-                  setViewMode("vote");
-                  setCurrentStep(0);
-                }}
-                size="lg"
-                className="text-base md:text-lg"
-              >
-                <Vote className="w-5 h-5 mr-2" />
-                Place Vote
-              </Button>
-            )}
-          </div>
-        </div>
-
         {/* Main Content */}
         <main className="flex-1 px-4 md:px-8 py-6 md:py-12">
           <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
-            {/* What Just Happened? */}
-            {hasVoted && (
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 md:p-6 border-2 border-green-300 dark:border-green-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
-                  <h4 className="font-bold text-base md:text-lg text-foreground">
-                    Your Vote is Secured!
-                  </h4>
-                </div>
-                <div className="space-y-2 text-sm md:text-base text-foreground/90">
-                  <p>
-                    ✅ <strong>Your vote is private:</strong> Only you know what
-                    you voted for
-                  </p>
-                  <p>
-                    ✅ <strong>Your vote is in the tree:</strong> Look for your
-                    colored signature below
-                  </p>
-                  <p>
-                    ✅ <strong>Anti-coercion enabled:</strong> You can update
-                    your vote anytime before finalization
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Color Explanation */}
-            {userVoteColor && (
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 md:p-6 border border-blue-200 dark:border-blue-800">
-                <div className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  🎨 Your Secret Color
-                </div>
-                <div className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 border mb-3">
-                  <div
-                    className="w-8 h-8 rounded-full border-2 border-white shadow-md animate-pulse"
-                    style={{ backgroundColor: userVoteColor }}
-                  />
-                  <div>
-                    <div className="text-sm font-semibold text-foreground">
-                      Only you know what this means!
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Each voter gets a random color for privacy
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Merkle Tree Visualization */}
             <div className="bg-card rounded-lg border p-4 md:p-6">
               <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
@@ -477,123 +432,154 @@ export default function MACIProcess() {
               <div className="overflow-x-auto">
                 <MerkleTreeVisualization
                   tree={merkleTree.getTreeStructure()}
-                  highlightLeaf={hasVoted && nullifier ? nullifier : undefined}
-                  highlightColor={userVoteColor || undefined}
+                  highlightLeaf={
+                    isFinalized && nullifier ? nullifier : undefined
+                  }
+                  highlightColor={
+                    isFinalized && userVoteColor ? userVoteColor : undefined
+                  }
                 />
               </div>
+
+              {/* Vote Now Button */}
+              {!hasVoted && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    onClick={() => {
+                      setViewMode("vote");
+                      setCurrentStep(0);
+                    }}
+                    size="lg"
+                    className="text-lg px-8 py-6"
+                  >
+                    <Vote className="w-6 h-6 mr-2" />
+                    Vote Now!
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {/* Your Proof */}
-            {userMerkleProof && userVoteColor && proofVerified && (
-              <div className="bg-card rounded-lg border p-4 md:p-6">
-                <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
-                  🔐 Your Cryptographic Proof
-                </h3>
-                <MerkleProofDisplay
-                  proof={userMerkleProof}
-                  verified={proofVerified}
-                  voteColor={userVoteColor}
-                />
+            {/* Finalize Vote Section - Simple and Clean */}
+            {hasVoted && !isFinalized && (
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 rounded-lg p-6 border-2 border-amber-300 dark:border-amber-700">
+                <div className="text-center space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground mb-2">
+                      Ready to Finalize Your Vote?
+                    </h3>
+                    <p className="text-sm text-foreground/80">
+                      Your vote is prepared. Click below to add it to the Merkle
+                      tree and make it official.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Button
+                      onClick={() => {
+                        setViewMode("vote");
+                        setCurrentStep(0);
+                      }}
+                      size="lg"
+                      variant="outline"
+                    >
+                      🔄 Change Vote
+                    </Button>
+                    <Button
+                      onClick={handleFinalize}
+                      size="lg"
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      ✓ Finalize Vote
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Vote Tallies */}
-            <div className="bg-card rounded-lg border p-4 md:p-6">
-              <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
-                📊 Current Results
-              </h3>
-              <div className="space-y-4">
-                {VOTING_OPTIONS.map((option) => {
-                  const votes = allVotes[option.id] || 0;
-                  const percentage = getVotePercentage(option.id);
-                  return (
-                    <div key={option.id} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm md:text-base">
-                        <span className="font-medium text-foreground flex items-center gap-2">
-                          <div
-                            className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
-                            style={{ backgroundColor: option.color }}
-                          />
-                          <span className="text-xl">{option.emoji}</span>
-                          <span>{option.label}</span>
-                        </span>
-                        <span className="text-muted-foreground">
-                          {votes} ({percentage}%)
-                        </span>
+            {/* After Finalization - Show Results */}
+            {isFinalized && (
+              <>
+                {/* Success Message */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border-2 border-green-300 dark:border-green-700">
+                  <div className="flex items-center justify-center gap-2">
+                    <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+                    <h4 className="font-bold text-lg text-foreground">
+                      Vote Finalized & Secured in Tree!
+                    </h4>
+                  </div>
+                </div>
+
+                {/* Your Proof */}
+                {userMerkleProof && userVoteColor && (
+                  <div className="bg-card rounded-lg border p-4 md:p-6">
+                    <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                      🔐 Your Cryptographic Proof
+                    </h3>
+                    <MerkleProofDisplay
+                      proof={userMerkleProof}
+                      verified={proofVerified}
+                      voteColor={userVoteColor}
+                    />
+                  </div>
+                )}
+
+                {/* Vote Tallies */}
+                <div className="bg-card rounded-lg border p-4 md:p-6">
+                  <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                    📊 Current Results
+                  </h3>
+                  <div className="space-y-4">
+                    {VOTING_OPTIONS.map((option) => {
+                      const votes = allVotes[option.id] || 0;
+                      const percentage = getVotePercentage(option.id);
+                      return (
+                        <div key={option.id} className="space-y-2">
+                          <div className="flex items-center justify-between text-sm md:text-base">
+                            <span className="font-medium text-foreground flex items-center gap-2">
+                              <div
+                                className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
+                                style={{ backgroundColor: option.color }}
+                              />
+                              <span className="text-xl">{option.emoji}</span>
+                              <span>{option.label}</span>
+                            </span>
+                            <span className="text-muted-foreground">
+                              {votes} ({percentage}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-white dark:bg-gray-800 rounded-full h-3 border border-border overflow-hidden">
+                            <div
+                              className="h-full transition-all duration-500 rounded-full"
+                              style={{
+                                width: `${percentage}%`,
+                                background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-6">
+                    <div className="bg-background rounded-lg p-4 border text-center">
+                      <div className="text-2xl font-bold text-foreground">
+                        {getTotalVotes()}
                       </div>
-                      <div className="w-full bg-white dark:bg-gray-800 rounded-full h-3 border border-border overflow-hidden">
-                        <div
-                          className="h-full transition-all duration-500 rounded-full"
-                          style={{
-                            width: `${percentage}%`,
-                            background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
-                          }}
-                        />
+                      <div className="text-sm text-muted-foreground">
+                        Total Votes
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="bg-background rounded-lg p-4 border text-center">
-                  <div className="text-2xl font-bold text-foreground">
-                    {getTotalVotes()}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Total Votes
+                    <div className="bg-background rounded-lg p-4 border text-center">
+                      <div className="text-2xl font-bold text-foreground">
+                        {merkleTree.getLeaves().length}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Tree Leaves
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="bg-background rounded-lg p-4 border text-center">
-                  <div className="text-2xl font-bold text-foreground">
-                    {merkleTree.getLeaves().length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Tree Leaves
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            {hasVoted && (
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button
-                  onClick={() => {
-                    setViewMode("vote");
-                    setCurrentStep(0);
-                  }}
-                  size="lg"
-                  variant="outline"
-                  className="flex-1"
-                >
-                  🔄 Update My Vote
-                </Button>
-                <Button
-                  onClick={handleFinalize}
-                  size="lg"
-                  className="flex-1"
-                  disabled={isFinalized}
-                >
-                  {isFinalized ? "✓ Vote Finalized" : "Finalize My Vote"}
-                </Button>
-              </div>
+              </>
             )}
-
-            {/* Anti-Coercion Info */}
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 rounded-lg p-4 md:p-6 border border-amber-200 dark:border-amber-800">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-2xl">🔄</span>
-                <h4 className="font-semibold text-sm md:text-base text-foreground">
-                  Anti-Coercion Feature
-                </h4>
-              </div>
-              <p className="text-sm text-foreground/80 leading-relaxed">
-                You can change your vote as many times as needed before
-                finalization. This prevents vote buying and coercion - even if
-                someone forces you to vote a certain way, you can change it
-                later!
-              </p>
-            </div>
           </div>
         </main>
 
