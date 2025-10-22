@@ -210,7 +210,6 @@ export default function MACIProcess() {
       }
 
       setIsSignedUp(true);
-      setTimeout(() => nextStep(), 800);
     } catch (error) {
       console.error("Error during signup:", error);
       toast.error("Failed to sign up. Please try again.");
@@ -455,11 +454,11 @@ export default function MACIProcess() {
                 <div className="text-center space-y-4">
                   <div>
                     <h3 className="text-xl font-bold text-foreground mb-2">
-                      Ready to Finalize Your Vote?
+                      Watch how the tree changes as you submit your vote!
                     </h3>
                     <p className="text-sm text-foreground/80">
-                      Your vote is prepared. Click below to add it to the Merkle
-                      tree and make it official.
+                      Click below to add it to the Merkle
+                      tree.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -468,7 +467,7 @@ export default function MACIProcess() {
                       size="lg"
                       className="bg-green-600 hover:bg-green-700"
                     >
-                      ✓ Finalize Vote
+                      ✓ Submit Vote
                     </Button>
                   </div>
                 </div>
