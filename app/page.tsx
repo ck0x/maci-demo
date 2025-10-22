@@ -130,12 +130,16 @@ export default function MACIProcess() {
   const [isFinalized, setIsFinalized] = useState(false);
   const [showAntiCoercionModal, setShowAntiCoercionModal] = useState(false);
   const [userVoteColor, setUserVoteColor] = useState<string | null>(null);
+  const [leafColors, setLeafColors] = useState<Record<string, string>>({});
 
   // Initialize Merkle tree with existing commitments on mount
   useEffect(() => {
     if (!isInitialized && typeof window !== "undefined") {
       setIsLoading(true);
       const existingCommitments = VoteStorage.getAllCommitments();
+      const colors = VoteStorage.getCommitmentColors();
+      setLeafColors(colors);
+
       if (existingCommitments.length > 0) {
         // Add all existing commitments to the tree
         Promise.all(
@@ -353,16 +357,32 @@ export default function MACIProcess() {
       // Update vote record with finalized status and proof
       if (upi && nullifier) {
         const trimmedUpi = upi.trim().toLowerCase();
+        const voteColor = userVoteColor || generateRandomColor();
         const record: VoteRecord = {
           commitment: userVoteCommitment,
           timestamp: Date.now(),
           nullifier,
           voteOption: selectedOption,
-          voteColor: userVoteColor || generateRandomColor(),
+          voteColor,
           finalized: true,
           merkleProof: proof || undefined,
         };
         VoteStorage.saveVote(trimmedUpi, record);
+
+        // Update leaf colors mapping
+        setLeafColors((prev) => ({
+          ...prev,
+          [userVoteCommitment]: voteColor,
+        }));
+
+        // Remove old vote color if updating
+        if (isVoteUpdate && previousVote) {
+          setLeafColors((prev) => {
+            const newColors = { ...prev };
+            delete newColors[previousVote];
+            return newColors;
+          });
+        }
       }
 
       setIsFinalized(true);
@@ -433,11 +453,14 @@ export default function MACIProcess() {
                 <MerkleTreeVisualization
                   tree={merkleTree.getTreeStructure()}
                   highlightLeaf={
-                    isFinalized && nullifier ? nullifier : undefined
+                    isFinalized && userVoteCommitment
+                      ? userVoteCommitment
+                      : undefined
                   }
                   highlightColor={
                     isFinalized && userVoteColor ? userVoteColor : undefined
                   }
+                  leafColors={leafColors}
                 />
               </div>
 

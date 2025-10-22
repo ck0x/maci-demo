@@ -7,6 +7,7 @@ interface MerkleTreeVisualizationProps {
   tree: MerkleNode | null;
   highlightLeaf?: string;
   highlightColor?: string;
+  leafColors?: Record<string, string>; // Map commitment hash to color
 }
 
 interface TreeNodePosition {
@@ -20,6 +21,7 @@ export function MerkleTreeVisualization({
   tree,
   highlightLeaf,
   highlightColor,
+  leafColors = {},
 }: MerkleTreeVisualizationProps) {
   const [positions, setPositions] = useState<TreeNodePosition[]>([]);
 
@@ -142,6 +144,9 @@ export function MerkleTreeVisualization({
           const isRoot = pos.level === 0;
           const isLeaf = pos.node.isLeaf;
 
+          // Get the color for this leaf from the mapping
+          const leafColor = isLeaf && leafColors[pos.node.hash];
+
           return (
             <g
               key={`node-${idx}`}
@@ -154,6 +159,8 @@ export function MerkleTreeVisualization({
                 fill={
                   isHighlighted && highlightColor
                     ? highlightColor
+                    : leafColor
+                    ? leafColor
                     : isRoot
                     ? "oklch(0.6 0.12 235)"
                     : isLeaf
