@@ -38,11 +38,9 @@ const VOTING_OPTIONS = [
   {
     id: "option-b",
     label: "No, never!",
-    emoji: "�",
+    emoji: "🤷",
     color: "#ef4444",
   },
-  { id: "option-c", label: "I don't care", emoji: "🤷", color: "#6b7280" },
-  { id: "option-d", label: "Only with ham", emoji: "🍖", color: "#ec4899" },
 ];
 
 const VOTING_QUESTION = "Does pineapple belong on pizza?";
@@ -205,20 +203,19 @@ export default function MACIProcess() {
         setUserVoteColor(existingVote.voteColor || generateRandomColor());
         setUserVoteCommitment(existingVote.commitment);
         setSelectedOption(existingVote.voteOption || null);
-        
+
         // Check if vote was already finalized
         if (existingVote.finalized) {
-          setIsFinalized(true);
-          setHasVoted(true);
-          // Restore proof if available
-          if (existingVote.merkleProof) {
-            setUserMerkleProof(existingVote.merkleProof);
-            setProofVerified(true);
-          }
-          toast.success("Welcome back! Your vote is finalized.");
+          // Allow them to change their vote - clear finalized state
+          setIsFinalized(false);
+          setHasVoted(false);
+          // Don't restore proof - they'll get a new one after re-finalizing
+          toast.success(
+            "Welcome back! You can change your vote if you'd like."
+          );
         } else {
-          setHasVoted(true);
-          toast.success("Welcome back! Your vote is ready to finalize.");
+          setHasVoted(false); // Allow them to change their vote
+          toast.success("Welcome back! You can update your vote.");
         }
         setShowAntiCoercionModal(true);
       } else {
@@ -370,6 +367,9 @@ export default function MACIProcess() {
 
       setIsFinalized(true);
       toast.success("Vote finalized and added to the tree!");
+
+      // Switch to vote view to show finalization message
+      setViewMode("vote");
     } catch (error) {
       console.error("Error finalizing vote:", error);
       toast.error("Failed to finalize vote. Please try again.");
@@ -441,7 +441,7 @@ export default function MACIProcess() {
                 />
               </div>
 
-              {/* Vote Now Button */}
+              {/* Vote Now Button / Vote Again for finalized users */}
               {!hasVoted && (
                 <div className="mt-6 flex justify-center">
                   <Button
@@ -454,6 +454,23 @@ export default function MACIProcess() {
                   >
                     <Vote className="w-6 h-6 mr-2" />
                     Vote Now!
+                  </Button>
+                </div>
+              )}
+
+              {isFinalized && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    onClick={() => {
+                      resetVoting();
+                      setViewMode("vote");
+                      setCurrentStep(0);
+                    }}
+                    size="lg"
+                    variant="outline"
+                    className="text-lg px-8 py-6"
+                  >
+                    🔄 Vote Again
                   </Button>
                 </div>
               )}
@@ -474,16 +491,6 @@ export default function MACIProcess() {
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <Button
-                      onClick={() => {
-                        setViewMode("vote");
-                        setCurrentStep(0);
-                      }}
-                      size="lg"
-                      variant="outline"
-                    >
-                      🔄 Change Vote
-                    </Button>
-                    <Button
                       onClick={handleFinalize}
                       size="lg"
                       className="bg-green-600 hover:bg-green-700"
@@ -495,91 +502,61 @@ export default function MACIProcess() {
               </div>
             )}
 
-            {/* After Finalization - Show Results */}
-            {isFinalized && (
-              <>
-                {/* Success Message */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border-2 border-green-300 dark:border-green-700">
-                  <div className="flex items-center justify-center gap-2">
-                    <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
-                    <h4 className="font-bold text-lg text-foreground">
-                      Vote Finalized & Secured in Tree!
-                    </h4>
-                  </div>
-                </div>
-
-                {/* Your Proof */}
-                {userMerkleProof && userVoteColor && (
-                  <div className="bg-card rounded-lg border p-4 md:p-6">
-                    <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
-                      🔐 Your Cryptographic Proof
-                    </h3>
-                    <MerkleProofDisplay
-                      proof={userMerkleProof}
-                      verified={proofVerified}
-                      voteColor={userVoteColor}
-                    />
-                  </div>
-                )}
-
-                {/* Vote Tallies */}
-                <div className="bg-card rounded-lg border p-4 md:p-6">
-                  <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
-                    📊 Current Results
-                  </h3>
-                  <div className="space-y-4">
-                    {VOTING_OPTIONS.map((option) => {
-                      const votes = allVotes[option.id] || 0;
-                      const percentage = getVotePercentage(option.id);
-                      return (
-                        <div key={option.id} className="space-y-2">
-                          <div className="flex items-center justify-between text-sm md:text-base">
-                            <span className="font-medium text-foreground flex items-center gap-2">
-                              <div
-                                className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
-                                style={{ backgroundColor: option.color }}
-                              />
-                              <span className="text-xl">{option.emoji}</span>
-                              <span>{option.label}</span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              {votes} ({percentage}%)
-                            </span>
-                          </div>
-                          <div className="w-full bg-white dark:bg-gray-800 rounded-full h-3 border border-border overflow-hidden">
-                            <div
-                              className="h-full transition-all duration-500 rounded-full"
-                              style={{
-                                width: `${percentage}%`,
-                                background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-6">
-                    <div className="bg-background rounded-lg p-4 border text-center">
-                      <div className="text-2xl font-bold text-foreground">
-                        {getTotalVotes()}
+            <div className="bg-card rounded-lg border p-4 md:p-6">
+              <h3 className="font-semibold text-lg md:text-xl text-foreground mb-4">
+                📊 Current Results
+              </h3>
+              <div className="space-y-4">
+                {VOTING_OPTIONS.map((option) => {
+                  const votes = allVotes[option.id] || 0;
+                  const percentage = getVotePercentage(option.id);
+                  return (
+                    <div key={option.id} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm md:text-base">
+                        <span className="font-medium text-foreground flex items-center gap-2">
+                          <div
+                            className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
+                            style={{ backgroundColor: option.color }}
+                          />
+                          <span className="text-xl">{option.emoji}</span>
+                          <span>{option.label}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          {votes} ({percentage}%)
+                        </span>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        Total Votes
+                      <div className="w-full bg-white dark:bg-gray-800 rounded-full h-3 border border-border overflow-hidden">
+                        <div
+                          className="h-full transition-all duration-500 rounded-full"
+                          style={{
+                            width: `${percentage}%`,
+                            background: `linear-gradient(90deg, ${option.color}, ${option.color}dd)`,
+                          }}
+                        />
                       </div>
                     </div>
-                    <div className="bg-background rounded-lg p-4 border text-center">
-                      <div className="text-2xl font-bold text-foreground">
-                        {merkleTree.getLeaves().length}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        Tree Leaves
-                      </div>
-                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-6">
+                <div className="bg-background rounded-lg p-4 border text-center">
+                  <div className="text-2xl font-bold text-foreground">
+                    {getTotalVotes()}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Total Votes
                   </div>
                 </div>
-              </>
-            )}
+                <div className="bg-background rounded-lg p-4 border text-center">
+                  <div className="text-2xl font-bold text-foreground">
+                    {merkleTree.getLeaves().length}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Tree Leaves
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </main>
 
@@ -644,186 +621,269 @@ export default function MACIProcess() {
               </p>
 
               <div className="w-full max-w-md mt-4 md:mt-6">
-                {/* Step 1: Sign Up */}
-                {currentStep === 0 && (
-                  <div className="space-y-4">
-                    {!isSignedUp ? (
-                      <>
-                        <div className="text-left space-y-2">
-                          <label
-                            htmlFor="upi"
-                            className="text-sm font-semibold text-foreground flex items-center gap-2"
-                          >
-                            <Shield className="w-4 h-4" />
-                            Enter Your Student UPI
-                          </label>
-                          <Input
-                            id="upi"
-                            type="text"
-                            placeholder="e.g. jsmith123"
-                            value={upi}
-                            onChange={(e) => setUpi(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && upi.trim()) {
-                                handleSignUp();
-                              }
-                            }}
-                            className="text-base"
-                            maxLength={20}
-                            autoComplete="off"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Your UPI will be hashed to create a unique,
-                            anonymous identifier. It won't be stored in plain
-                            text.
-                          </p>
+                {/* Finalization Success View */}
+                {isFinalized ? (
+                  <div className="space-y-6">
+                    {/* Success Message */}
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-6 border-2 border-green-300 dark:border-green-700">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-8 h-8 text-green-600 dark:text-green-400" />
+                          <h4 className="font-bold text-xl text-foreground">
+                            Vote Finalized!
+                          </h4>
                         </div>
-                        <Button
-                          onClick={handleSignUp}
-                          disabled={!upi.trim()}
-                          size="lg"
-                          className="w-full text-lg"
-                        >
-                          Sign Up to Vote
-                        </Button>
-                      </>
-                    ) : (
-                      <div className="space-y-3">
-                        {isVoteUpdate ? (
-                          <div className="flex items-center justify-center gap-2 text-amber-600 dark:text-amber-400 font-semibold">
-                            <Check className="w-6 h-6" />
-                            Existing Voter - You Can Update Your Vote!
-                          </div>
+                        <p className="text-sm text-center text-foreground/80">
+                          Your vote has been secured in the Merkle tree
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Your Proof */}
+                    {userMerkleProof && userVoteColor && (
+                      <div className="bg-card rounded-lg border p-4">
+                        <h3 className="font-semibold text-base text-foreground mb-3">
+                          🔐 Your Cryptographic Proof
+                        </h3>
+                        <MerkleProofDisplay
+                          proof={userMerkleProof}
+                          verified={proofVerified}
+                          voteColor={userVoteColor}
+                        />
+                      </div>
+                    )}
+
+                    {/* View Tree Button */}
+                    <Button
+                      onClick={() => {
+                        setViewMode("tree");
+                        // Reset to allow voting again if needed
+                        setCurrentStep(0);
+                        setIsSignedUp(false);
+                        setSelectedOption(null);
+                      }}
+                      size="lg"
+                      className="w-full"
+                    >
+                      Go Back to Dashboard
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Step 1: Sign Up */}
+                    {currentStep === 0 && (
+                      <div className="space-y-4">
+                        {!isSignedUp ? (
+                          <>
+                            <div className="text-left space-y-2">
+                              <label
+                                htmlFor="upi"
+                                className="text-sm font-semibold text-foreground flex items-center gap-2"
+                              >
+                                <Shield className="w-4 h-4" />
+                                Enter Your Student UPI
+                              </label>
+                              <Input
+                                id="upi"
+                                type="text"
+                                placeholder="e.g. jsmith123"
+                                value={upi}
+                                onChange={(e) => setUpi(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && upi.trim()) {
+                                    handleSignUp();
+                                  }
+                                }}
+                                className="text-base"
+                                maxLength={20}
+                                autoComplete="off"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Your UPI will be hashed to create a unique,
+                                anonymous identifier. It won't be stored in
+                                plain text.
+                              </p>
+                            </div>
+                            <Button
+                              onClick={handleSignUp}
+                              disabled={!upi.trim()}
+                              size="lg"
+                              className="w-full text-lg"
+                            >
+                              Sign Up to Vote
+                            </Button>
+                          </>
                         ) : (
-                          <div className="flex items-center justify-center gap-2 text-green-600 font-semibold">
-                            <Check className="w-6 h-6" />
-                            Successfully Signed Up!
+                          <div className="space-y-3">
+                            {isVoteUpdate ? (
+                              <div className="flex items-center justify-center gap-2 text-amber-600 dark:text-amber-400 font-semibold">
+                                <Check className="w-6 h-6" />
+                                Existing Voter - You Can Update Your Vote!
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2 text-green-600 font-semibold">
+                                <Check className="w-6 h-6" />
+                                Successfully Signed Up!
+                              </div>
+                            )}
+                            {isVoteUpdate && (
+                              <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3 border border-amber-200 dark:border-amber-800 text-xs">
+                                <div className="font-semibold text-amber-900 dark:text-amber-300 mb-1">
+                                  🔄 MACI Vote Update Feature
+                                </div>
+                                <p className="text-amber-800 dark:text-amber-400">
+                                  In MACI, you can change your vote as many
+                                  times as you want before voting ends. Only
+                                  your{" "}
+                                  <span className="font-bold">latest vote</span>{" "}
+                                  will count in the final tally. This prevents
+                                  coercion!
+                                </p>
+                              </div>
+                            )}
+                            <div className="bg-muted/30 rounded-lg p-3 text-xs space-y-1">
+                              <div className="font-semibold text-muted-foreground">
+                                Your Nullifier (Anonymous ID):
+                              </div>
+                              <div className="font-mono text-foreground break-all">
+                                {nullifier?.slice(0, 32)}...
+                              </div>
+                            </div>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Step 2: Cast Vote */}
+                    {currentStep === 1 && (
+                      <div className="space-y-4">
                         {isVoteUpdate && (
-                          <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3 border border-amber-200 dark:border-amber-800 text-xs">
-                            <div className="font-semibold text-amber-900 dark:text-amber-300 mb-1">
-                              🔄 MACI Vote Update Feature
+                          <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3 border-2 border-amber-300 dark:border-amber-700">
+                            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-semibold text-sm mb-1">
+                              🔄 Updating Your Vote
                             </div>
-                            <p className="text-amber-800 dark:text-amber-400">
-                              In MACI, you can change your vote as many times as
-                              you want before voting ends. Only your{" "}
-                              <span className="font-bold">latest vote</span>{" "}
-                              will count in the final tally. This prevents
-                              coercion!
+                            <p className="text-xs text-amber-800 dark:text-amber-400">
+                              You're updating your previous vote. Your new
+                              choice will replace the old one in the final
+                              tally.
                             </p>
                           </div>
                         )}
-                        <div className="bg-muted/30 rounded-lg p-3 text-xs space-y-1">
-                          <div className="font-semibold text-muted-foreground">
-                            Your Nullifier (Anonymous ID):
-                          </div>
-                          <div className="font-mono text-foreground break-all">
-                            {nullifier?.slice(0, 32)}...
-                          </div>
+                        <h3 className="font-semibold text-lg text-foreground">
+                          {VOTING_QUESTION}
+                        </h3>
+                        <div className="grid gap-3">
+                          {VOTING_OPTIONS.map((option) => (
+                            <button
+                              key={option.id}
+                              onClick={() => setSelectedOption(option.id)}
+                              disabled={hasVoted}
+                              className={`p-3 md:p-4 rounded-lg border-2 transition-all text-left flex items-center gap-2 md:gap-3 ${
+                                selectedOption === option.id
+                                  ? "border-primary bg-primary/10 scale-105 shadow-lg"
+                                  : "border-border bg-white dark:bg-gray-800 hover:border-primary/50 active:scale-95"
+                              } ${
+                                hasVoted
+                                  ? "opacity-50 cursor-not-allowed"
+                                  : "cursor-pointer"
+                              }`}
+                            >
+                              <div
+                                className={`w-5 h-5 md:w-6 md:h-6 rounded-full border-3 border-white shadow-md transition-all flex-shrink-0 ${
+                                  selectedOption === option.id
+                                    ? "scale-110"
+                                    : ""
+                                }`}
+                                style={{ backgroundColor: option.color }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xl md:text-2xl mr-1.5 md:mr-2">
+                                  {option.emoji}
+                                </span>
+                                <span className="font-medium text-foreground text-sm md:text-base">
+                                  {option.label}
+                                </span>
+                              </div>
+                              {selectedOption === option.id && (
+                                <Check className="w-4 h-4 md:w-5 md:h-5 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          ))}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Step 2: Cast Vote */}
-                {currentStep === 1 && (
-                  <div className="space-y-4">
-                    {isVoteUpdate && (
-                      <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3 border-2 border-amber-300 dark:border-amber-700">
-                        <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-semibold text-sm mb-1">
-                          🔄 Updating Your Vote
-                        </div>
-                        <p className="text-xs text-amber-800 dark:text-amber-400">
-                          You're updating your previous vote. Your new choice
-                          will replace the old one in the final tally.
-                        </p>
-                      </div>
-                    )}
-                    <h3 className="font-semibold text-lg text-foreground">
-                      {VOTING_QUESTION}
-                    </h3>
-                    <div className="grid gap-3">
-                      {VOTING_OPTIONS.map((option) => (
-                        <button
-                          key={option.id}
-                          onClick={() => setSelectedOption(option.id)}
-                          disabled={hasVoted}
-                          className={`p-3 md:p-4 rounded-lg border-2 transition-all text-left flex items-center gap-2 md:gap-3 ${
-                            selectedOption === option.id
-                              ? "border-primary bg-primary/10 scale-105 shadow-lg"
-                              : "border-border bg-white dark:bg-gray-800 hover:border-primary/50 active:scale-95"
-                          } ${
-                            hasVoted
-                              ? "opacity-50 cursor-not-allowed"
-                              : "cursor-pointer"
-                          }`}
-                        >
-                          <div
-                            className={`w-5 h-5 md:w-6 md:h-6 rounded-full border-3 border-white shadow-md transition-all flex-shrink-0 ${
-                              selectedOption === option.id ? "scale-110" : ""
-                            }`}
-                            style={{ backgroundColor: option.color }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-xl md:text-2xl mr-1.5 md:mr-2">
-                              {option.emoji}
-                            </span>
-                            <span className="font-medium text-foreground text-sm md:text-base">
-                              {option.label}
-                            </span>
+                        {selectedOption && !hasVoted && userVoteColor && (
+                          <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-2.5 md:p-3 border border-indigo-200 dark:border-indigo-800">
+                            <div className="flex items-start gap-2">
+                              <div
+                                className="w-4 h-4 md:w-5 md:h-5 rounded-full border-2 border-white shadow-sm mt-0.5 flex-shrink-0"
+                                style={{
+                                  backgroundColor: userVoteColor,
+                                }}
+                              />
+                              <div className="text-xs text-foreground/80 leading-relaxed">
+                                <span className="font-semibold">
+                                  Your vote will be encrypted
+                                </span>{" "}
+                                with this RANDOM color signature. Only you will
+                                know what it represents - nobody can tell what
+                                you voted for by the color!
+                              </div>
+                            </div>
                           </div>
-                          {selectedOption === option.id && (
-                            <Check className="w-4 h-4 md:w-5 md:h-5 text-primary flex-shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                    {selectedOption && !hasVoted && userVoteColor && (
-                      <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-2.5 md:p-3 border border-indigo-200 dark:border-indigo-800">
-                        <div className="flex items-start gap-2">
-                          <div
-                            className="w-4 h-4 md:w-5 md:h-5 rounded-full border-2 border-white shadow-sm mt-0.5 flex-shrink-0"
-                            style={{
-                              backgroundColor: userVoteColor,
-                            }}
-                          />
-                          <div className="text-xs text-foreground/80 leading-relaxed">
-                            <span className="font-semibold">
-                              Your vote will be encrypted
-                            </span>{" "}
-                            with this RANDOM color signature. Only you will know
-                            what it represents - nobody can tell what you voted
-                            for by the color!
+                        )}
+                        {!hasVoted ? (
+                          <Button
+                            onClick={handleCastVote}
+                            disabled={!selectedOption}
+                            size="lg"
+                            className="w-full text-base md:text-lg mt-4"
+                          >
+                            {isVoteUpdate
+                              ? "🔄 Update My Vote"
+                              : "Cast Encrypted Vote"}
+                          </Button>
+                        ) : (
+                          <div className="flex items-center justify-center gap-2 text-green-600 font-semibold mt-4 text-sm md:text-base">
+                            <Check className="w-5 h-5 md:w-6 md:h-6" />
+                            {isVoteUpdate
+                              ? "Vote Updated Successfully!"
+                              : "Vote Encrypted & Submitted!"}
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
-                    {!hasVoted ? (
-                      <Button
-                        onClick={handleCastVote}
-                        disabled={!selectedOption}
-                        size="lg"
-                        className="w-full text-base md:text-lg mt-4"
-                      >
-                        {isVoteUpdate
-                          ? "🔄 Update My Vote"
-                          : "Cast Encrypted Vote"}
-                      </Button>
-                    ) : (
-                      <div className="flex items-center justify-center gap-2 text-green-600 font-semibold mt-4 text-sm md:text-base">
-                        <Check className="w-5 h-5 md:w-6 md:h-6" />
-                        {isVoteUpdate
-                          ? "Vote Updated Successfully!"
-                          : "Vote Encrypted & Submitted!"}
-                      </div>
-                    )}
-                  </div>
+                  </>
                 )}
               </div>
             </div>
           </div>
+
+          {/* Navigation Buttons - Hide when finalized */}
+          {!isFinalized && (
+            <div className="flex items-center justify-between mt-6 md:mt-8 gap-4">
+              <Button
+                onClick={() => {
+                  if (currentStep === 0) {
+                    setViewMode("tree");
+                  } else {
+                    prevStep();
+                  }
+                }}
+                variant="outline"
+                size="lg"
+                className="gap-2"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+                Back
+              </Button>
+
+              {currentStep === 0 && isSignedUp && (
+                <Button onClick={nextStep} size="lg" className="gap-2">
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </main>
 

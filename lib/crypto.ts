@@ -310,7 +310,8 @@ export const VoteStorage = {
             const record = localStorage.getItem(key);
             if (record) {
               const parsed = JSON.parse(record);
-              if (parsed.commitment) {
+              // Only include finalized commitments in the tree
+              if (parsed.commitment && parsed.finalized === true) {
                 commitments.push(parsed.commitment);
               }
             }
@@ -322,5 +323,34 @@ export const VoteStorage = {
       }
     }
     return [];
+  },
+
+  getCommitmentColors(): Record<string, string> {
+    if (typeof window !== "undefined") {
+      try {
+        const colorMap: Record<string, string> = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith("vote:")) {
+            const record = localStorage.getItem(key);
+            if (record) {
+              const parsed = JSON.parse(record);
+              // Only include finalized votes with colors
+              if (
+                parsed.commitment &&
+                parsed.finalized === true &&
+                parsed.voteColor
+              ) {
+                colorMap[parsed.commitment] = parsed.voteColor;
+              }
+            }
+          }
+        }
+        return colorMap;
+      } catch (error) {
+        console.error("Error getting commitment colors:", error);
+      }
+    }
+    return {};
   },
 };

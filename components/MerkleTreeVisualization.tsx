@@ -225,39 +225,6 @@ export function MerkleProofDisplay({
 
   return (
     <div className="space-y-3 md:space-y-4">
-      {/* Simple Analogy */}
-      <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/30 dark:to-amber-950/30 rounded-lg p-3 md:p-4 border-2 border-yellow-300 dark:border-yellow-700">
-        <h4 className="font-bold text-sm md:text-base text-foreground mb-2 flex items-center gap-2">
-          💡 Real-World Analogy
-        </h4>
-        <div className="space-y-2 text-xs md:text-sm text-foreground/90 leading-relaxed">
-          <p>
-            <strong>Imagine a locked mailbox at a post office:</strong>
-          </p>
-          <div className="bg-white/50 dark:bg-black/20 rounded p-2 space-y-1.5">
-            <p>
-              📬 <strong>You:</strong> "I mailed a letter (your vote)"
-            </p>
-            <p>
-              📮 <strong>Post Office:</strong> "We can prove your letter is in
-              our system"
-            </p>
-            <p>
-              🔐 <strong>Privacy:</strong> "But we never opened it to see what's
-              inside!"
-            </p>
-            <p>
-              ✅ <strong>Result:</strong> "Your letter was counted, and you stay
-              anonymous"
-            </p>
-          </div>
-          <p className="text-xs italic bg-blue-50 dark:bg-blue-950/30 rounded p-2 mt-2">
-            That's exactly what's happening below - we're proving your vote is
-            counted without revealing what you chose! 🎉
-          </p>
-        </div>
-      </div>
-
       {/* What is Zero-Knowledge Proof? */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 rounded-lg p-3 md:p-4 border-2 border-indigo-200 dark:border-indigo-800">
         <h4 className="font-bold text-xs md:text-sm text-foreground mb-1.5 md:mb-2 flex items-center gap-2">
