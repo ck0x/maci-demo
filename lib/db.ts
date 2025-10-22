@@ -94,6 +94,17 @@ export const db = {
     return (result[0] as DbVoteCommitment) || null;
   },
 
+  async getVoteCommitmentById(
+    commitmentId: number
+  ): Promise<DbVoteCommitment | null> {
+    const result = await sql`
+      SELECT * FROM vote_commitments 
+      WHERE id = ${commitmentId}
+      LIMIT 1
+    `;
+    return (result[0] as DbVoteCommitment) || null;
+  },
+
   async createVoteCommitment(
     userId: number,
     commitmentHash: string,

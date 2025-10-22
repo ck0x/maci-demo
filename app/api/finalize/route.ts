@@ -13,17 +13,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Fetching commitment by hash:", commitmentId);
+    console.log("Fetching commitment by ID:", commitmentId);
 
-    const commitment_hash =
-      (await db.getVoteCommitmentByUser(commitmentId))?.commitment_hash || "";
-
-      console.log("Commitment hash to finalize:", commitment_hash);
-    // Get the commitment
-    const commitment = await db.getVoteCommitmentByHash(
-
-      (await db.getVoteCommitmentByUser(commitmentId))?.commitment_hash || ""
-    );
+    // Get the commitment by its ID
+    const commitment = await db.getVoteCommitmentById(commitmentId);
 
     console.log("Finalizing commitment:", commitment);
 
