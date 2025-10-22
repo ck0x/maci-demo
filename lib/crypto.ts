@@ -346,11 +346,59 @@ export const VoteStorage = {
             }
           }
         }
+        // Also get colors from historical commitments
+        const history = this.getAllCommitmentHistory();
+        history.forEach((record) => {
+          if (record.commitment && record.voteColor) {
+            colorMap[record.commitment] = record.voteColor;
+          }
+        });
         return colorMap;
       } catch (error) {
         console.error("Error getting commitment colors:", error);
       }
     }
     return {};
+  },
+
+  // Store a commitment in the historical record (for MACI-style tracking)
+  saveCommitmentToHistory(record: VoteRecord): void {
+    if (typeof window !== "undefined") {
+      try {
+        const history = this.getAllCommitmentHistory();
+        // Add new record to history (don't remove old ones)
+        history.push(record);
+        localStorage.setItem(
+          "maci-commitment-history",
+          JSON.stringify(history)
+        );
+      } catch (error) {
+        console.error("Error saving commitment to history:", error);
+      }
+    }
+  },
+
+  // Get all historical commitments (including invalidated ones)
+  getAllCommitmentHistory(): VoteRecord[] {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("maci-commitment-history");
+        if (stored) {
+          const history = JSON.parse(stored);
+          return Array.isArray(history) ? history : [];
+        }
+      } catch (error) {
+        console.error("Error getting commitment history:", error);
+      }
+    }
+    return [];
+  },
+
+  // Get all finalized commitments from history
+  getAllHistoricalCommitments(): string[] {
+    const history = this.getAllCommitmentHistory();
+    return history
+      .filter((record) => record.finalized === true && record.commitment)
+      .map((record) => record.commitment);
   },
 };

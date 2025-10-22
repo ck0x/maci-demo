@@ -136,7 +136,8 @@ export default function MACIProcess() {
   useEffect(() => {
     if (!isInitialized && typeof window !== "undefined") {
       setIsLoading(true);
-      const existingCommitments = VoteStorage.getAllCommitments();
+      // Load ALL historical commitments (including old/invalidated ones - MACI style)
+      const existingCommitments = VoteStorage.getAllHistoricalCommitments();
       const colors = VoteStorage.getCommitmentColors();
       setLeafColors(colors);
 
@@ -163,7 +164,6 @@ export default function MACIProcess() {
       }
     }
   }, [isInitialized, merkleTree]);
-
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem("maci-votes", JSON.stringify(allVotes));
@@ -322,30 +322,37 @@ export default function MACIProcess() {
     }
 
     try {
-      // If updating vote, remove old commitment from tree and decrement old vote count
-      if (isVoteUpdate && previousVote) {
-        await merkleTree.removeLeaf(previousVote);
-        if (previousVoteOption) {
-          setAllVotes((prev) => ({
-            ...prev,
-            [previousVoteOption]: Math.max(
-              (prev[previousVoteOption] || 0) - 1,
-              0
-            ),
-          }));
-        }
+      // If updating vote, decrement old vote count (but keep old commitment in tree - MACI style)
+      if (isVoteUpdate && previousVoteOption) {
+        setAllVotes((prev) => ({
+          ...prev,
+          [previousVoteOption]: Math.max(
+            (prev[previousVoteOption] || 0) - 1,
+            0
+          ),
+        }));
       }
 
-      // Add commitment to Merkle tree
+      // Add new commitment to Merkle tree (old one stays in tree but is invalidated)
       await merkleTree.addLeaf(userVoteCommitment);
       setTreeVersion((v) => v + 1);
 
-      // Generate proof
+      // Generate proof (wait a moment to ensure tree is fully built)
+      await new Promise((resolve) => setTimeout(resolve, 100));
       const proof = await merkleTree.generateProof(userVoteCommitment);
       if (proof) {
         setUserMerkleProof(proof);
         const verified = await merkleTree.verifyProof(proof);
+        console.log("Proof verification result:", verified);
+        console.log("Proof:", proof);
+        console.log("Tree root:", merkleTree.getRoot());
         setProofVerified(verified);
+      } else {
+        console.error(
+          "Failed to generate proof for commitment:",
+          userVoteCommitment
+        );
+        setProofVerified(false);
       }
 
       // Add the vote to the tally
@@ -367,29 +374,24 @@ export default function MACIProcess() {
           finalized: true,
           merkleProof: proof || undefined,
         };
+        // Save as current vote for this user
         VoteStorage.saveVote(trimmedUpi, record);
 
-        // Update leaf colors mapping
+        // Also save to commitment history (MACI style - keeps all votes)
+        VoteStorage.saveCommitmentToHistory(record);
+
+        // Update leaf colors mapping (add new vote color, keep old one in tree)
         setLeafColors((prev) => ({
           ...prev,
           [userVoteCommitment]: voteColor,
         }));
-
-        // Remove old vote color if updating
-        if (isVoteUpdate && previousVote) {
-          setLeafColors((prev) => {
-            const newColors = { ...prev };
-            delete newColors[previousVote];
-            return newColors;
-          });
-        }
       }
 
       setIsFinalized(true);
       toast.success("Vote finalized and added to the tree!");
 
-      // Switch to vote view to show finalization message
-      setViewMode("vote");
+      // Stay in tree view to show the vote in the Merkle tree
+      // setViewMode("vote"); // Removed - no need to switch views
     } catch (error) {
       console.error("Error finalizing vote:", error);
       toast.error("Failed to finalize vote. Please try again.");
@@ -666,7 +668,7 @@ export default function MACIProcess() {
                     {userMerkleProof && userVoteColor && (
                       <div className="bg-card rounded-lg border p-4">
                         <h3 className="font-semibold text-base text-foreground mb-3">
-                          🔐 Your Cryptographic Proof
+                          🔐 Your Vote Proof
                         </h3>
                         <MerkleProofDisplay
                           proof={userMerkleProof}
