@@ -200,17 +200,11 @@ export function MerkleTreeVisualization({
 }
 
 interface MerkleProofDisplayProps {
-  proof: {
-    leaf: string;
-    path: Array<{ hash: string; position: "left" | "right" }>;
-    root: string;
-  };
   verified: boolean;
   voteColor?: string;
 }
 
 export function MerkleProofDisplay({
-  proof,
   verified,
   voteColor = "#8b5cf6",
 }: MerkleProofDisplayProps) {
@@ -219,7 +213,7 @@ export function MerkleProofDisplay({
       {/* What's Happening Here? */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 rounded-lg p-3 md:p-4 border-2 border-indigo-200 dark:border-indigo-800">
         <h4 className="font-bold text-xs md:text-sm text-foreground mb-1.5 md:mb-2 flex items-center gap-2">
-          🔐 What's Happening Here?
+          🔐 What&apos;s Happening Here?
         </h4>
         <div className="flex items-start gap-2 md:gap-3 mb-2">
           <div

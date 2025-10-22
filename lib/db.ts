@@ -212,7 +212,7 @@ export const db = {
     actionType: string,
     userId: number | null,
     commitmentId: number | null,
-    details: Record<string, any> | null
+    details: Record<string, unknown> | null
   ): Promise<void> {
     await sql`
       INSERT INTO audit_log (action_type, user_id, commitment_id, details)

@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { toast, Toaster } from "sonner";
 import {
   ChevronRight,
-  ChevronLeft,
   UserPlus,
   Vote,
   FileCheck,
@@ -15,13 +14,10 @@ import {
   Shield,
 } from "lucide-react";
 import {
-  generateNullifier,
-  createVoteCommitment,
   generateRandomColor,
   MerkleTree,
   VoteStorage,
   type MerkleProof,
-  type VoteRecord,
 } from "@/lib/crypto";
 import {
   MerkleTreeVisualization,
@@ -99,7 +95,6 @@ export default function MACIProcess() {
   const [nullifier, setNullifier] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [allVotes, setAllVotes] = useState<Record<string, number>>({});
   const [merkleTree] = useState(() => new MerkleTree());
   const [commitmentId, setCommitmentId] = useState<number | null>(null);
@@ -110,8 +105,6 @@ export default function MACIProcess() {
     null
   );
   const [proofVerified, setProofVerified] = useState(false);
-  const [treeVersion, setTreeVersion] = useState(0);
-  const [previousVote, setPreviousVote] = useState<string | null>(null);
   const [previousVoteOption, setPreviousVoteOption] = useState<string | null>(
     null
   );
@@ -119,7 +112,6 @@ export default function MACIProcess() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinalized, setIsFinalized] = useState(false);
-  const [showAntiCoercionModal, setShowAntiCoercionModal] = useState(false);
   const [userVoteColor, setUserVoteColor] = useState<string | null>(null);
   const [leafColors, setLeafColors] = useState<Record<string, string>>({});
 
@@ -142,7 +134,6 @@ export default function MACIProcess() {
           return Promise.resolve([]);
         })
         .then(() => {
-          setTreeVersion((v) => v + 1);
           setIsInitialized(true);
           setIsLoading(false);
         })
@@ -164,10 +155,6 @@ export default function MACIProcess() {
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
-  };
-
-  const goToStep = (index: number) => {
-    setCurrentStep(index);
   };
 
   const handleSignUp = async () => {
@@ -198,7 +185,6 @@ export default function MACIProcess() {
       if (data.hasExistingVote && data.existingVote) {
         const existingVote = data.existingVote;
         setIsVoteUpdate(true);
-        setPreviousVote(existingVote.commitment);
         setPreviousVoteOption(existingVote.voteOption || null);
         setUserVoteColor(existingVote.voteColor || generateRandomColor());
         setUserVoteCommitment(existingVote.commitment);
@@ -216,10 +202,8 @@ export default function MACIProcess() {
           setHasVoted(false); // Allow them to change their vote
           toast.success("Welcome back! You can update your vote.");
         }
-        setShowAntiCoercionModal(true);
       } else {
         setIsVoteUpdate(false);
-        setPreviousVote(null);
         setPreviousVoteOption(null);
         setUserVoteColor(generateRandomColor());
         toast.success("Successfully signed up!");
@@ -278,42 +262,6 @@ export default function MACIProcess() {
     }
   };
 
-  const handleProcessing = async () => {
-    if (!userVoteCommitment) {
-      toast.error("No vote commitment found");
-      return;
-    }
-
-    setIsProcessing(true);
-
-    // Generate Merkle proof for user's vote
-    try {
-      const proof = await merkleTree.generateProof(userVoteCommitment);
-      if (proof) {
-        setUserMerkleProof(proof);
-        const verified = await merkleTree.verifyProof(proof);
-        setProofVerified(verified);
-
-        if (verified) {
-          toast.success("Proof generated and verified successfully!");
-        } else {
-          toast.error("Proof verification failed");
-        }
-      } else {
-        setProofVerified(false);
-        toast.error("Failed to generate proof");
-      }
-    } catch (error) {
-      setProofVerified(false);
-      toast.error("Error generating proof. Please try again.");
-    }
-
-    setTimeout(() => {
-      setIsProcessing(false);
-      nextStep();
-    }, 2000);
-  };
-
   const handleFinalize = async () => {
     if (!selectedOption || !userVoteCommitment || !commitmentId) {
       toast.error("No vote to finalize");
@@ -328,7 +276,6 @@ export default function MACIProcess() {
     try {
       // Add new commitment to Merkle tree (old one stays in tree but is invalidated)
       await merkleTree.addLeaf(userVoteCommitment);
-      setTreeVersion((v) => v + 1);
 
       // Generate proof (wait a moment to ensure tree is fully built)
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -408,11 +355,9 @@ export default function MACIProcess() {
     setNullifier(null);
     setSelectedOption(null);
     setHasVoted(false);
-    setIsProcessing(false);
     setUserVoteCommitment(null);
     setUserMerkleProof(null);
     setProofVerified(false);
-    setPreviousVote(null);
     setPreviousVoteOption(null);
     setIsVoteUpdate(false);
     setIsFinalized(false);
@@ -674,7 +619,6 @@ export default function MACIProcess() {
                           🔐 Your Vote Proof
                         </h3>
                         <MerkleProofDisplay
-                          proof={userMerkleProof}
                           verified={proofVerified}
                           voteColor={userVoteColor}
                         />
@@ -728,7 +672,7 @@ export default function MACIProcess() {
                               />
                               <p className="text-xs text-muted-foreground">
                                 Your UPI will be hashed to create a unique,
-                                anonymous identifier. It won't be stored in
+                                anonymous identifier. It won&apos;t be stored in
                                 plain text.
                               </p>
                             </div>
@@ -791,7 +735,7 @@ export default function MACIProcess() {
                               🔄 Updating Your Vote
                             </div>
                             <p className="text-xs text-amber-800 dark:text-amber-400">
-                              You're updating your previous vote. Your new
+                              You&apos;re updating your previous vote. Your new
                               choice will replace the old one in the final
                               tally.
                             </p>
